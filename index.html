@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Password Strength Analyzer</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #161a2b;
+    --panel: #1f2540;
+    --line: #343c63;
+    --text: #eceff7;
+    --muted: #9aa3c4;
+    --bad: #ff5d6c;
+    --mid: #ffb454;
+    --good: #46d6b0;
+    --level: var(--muted);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    line-height: 1.55;
+    min-height: 100vh;
+    padding: 40px 20px 64px;
+  }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 6px; font-weight: 650; }
+  .lead { color: var(--muted); margin: 0 0 28px; max-width: 52ch; }
+
+  .field { position: relative; }
+  label { display: block; font-size: .9rem; color: var(--muted); margin-bottom: 8px; }
+  input[type="password"], input[type="text"] {
+    width: 100%;
+    padding: 14px 92px 14px 16px;
+    font: inherit; font-size: 1.15rem;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--good); outline-offset: 2px; }
+  #toggle {
+    position: absolute; right: 8px; bottom: 8px;
+    padding: 8px 12px; font: inherit; font-size: .85rem;
+    color: var(--text); background: transparent;
+    border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+  }
+
+  .verdict { margin: 36px 0 8px; min-height: 150px; }
+  .verdict .small { color: var(--muted); font-size: .95rem; margin: 0; }
+  #time {
+    font-size: clamp(2.6rem, 11vw, 4.4rem);
+    font-weight: 750; line-height: 1.05;
+    color: var(--level);
+    margin: 4px 0 6px;
+    overflow-wrap: anywhere;
+    transition: color .25s;
+  }
+  #level { margin: 0; font-weight: 600; color: var(--level); transition: color .25s; }
+
+  .meter { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 18px 0 28px; }
+  .meter span { height: 6px; border-radius: 3px; background: var(--line); transition: background .25s; }
+  .meter span.on { background: var(--level); }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 28px; }
+  .stat { background: var(--panel); border-radius: 10px; padding: 12px 14px; }
+  .stat b { display: block; font-size: 1.2rem; }
+  .stat span { color: var(--muted); font-size: .82rem; }
+
+  h2 { font-size: 1rem; margin: 0 0 10px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 28px; font-size: .95rem; }
+  td { padding: 9px 0; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  td small { display: block; color: var(--muted); font-weight: 400; }
+
+  ul { padding-left: 1.1rem; margin: 0 0 28px; }
+  li { margin-bottom: 6px; }
+  .note { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--line); padding-top: 16px; }
+
+  @media (max-width: 480px) { .stats { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Password Strength Analyzer</h1>
+  <p class="lead">Type a password and see roughly how long it would take to crack. Everything is calculated in your browser.</p>
+
+  <div class="field">
+    <label for="pw">Password</label>
+    <input id="pw" type="password" autocomplete="off" spellcheck="false" autocapitalize="off">
+    <button id="toggle" type="button" aria-pressed="false">Show</button>
+  </div>
+
+  <section class="verdict" aria-live="polite">
+    <p class="small">A fast computer (offline attack) would crack this in:</p>
+    <p id="time">—</p>
+    <p id="level">Start typing a password</p>
+  </section>
+
+  <div class="meter" id="meter" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+
+  <div class="stats">
+    <div class="stat"><b id="sLen">0</b><span>characters</span></div>
+    <div class="stat"><b id="sPool">0</b><span>possible symbols (pool)</span></div>
+    <div class="stat"><b id="sBits">0</b><span>bits of entropy</span></div>
+  </div>
+
+  <h2>Estimated time by attack type</h2>
+  <table>
+    <tbody>
+      <tr><td>Online login attempts<small>100 guesses per second</small></td><td id="t1">—</td></tr>
+      <tr><td>Stolen hash database, one GPU<small>10 billion guesses per second</small></td><td id="t2">—</td></tr>
+      <tr><td>Large GPU cluster<small>1 trillion guesses per second</small></td><td id="t3">—</td></tr>
+    </tbody>
+  </table>
+
+  <h2>How to improve it</h2>
+  <ul id="tips"><li>Specific tips will appear here as you type.</li></ul>
+
+  <p class="note">Your password is never sent to a server or stored. Results are estimates: real attackers use common-password lists and pattern rules, so a long, random password is always better. Use a different password for every site.</p>
+</main>
+
+<script>
+(function () {
+  var COMMON = ["password","parol","sifre","şifrə","admin","qwerty","azerty","letmein","welcome","iloveyou",
+    "azerbaycan","azərbaycan","baku","baki","bakı","salam","qarabag","qarabağ","dragon","monkey","football",
+    "master","login","abc123","test","user","root","12345678","123456789","1234567890","123456","111111","000000"];
+  var ROWS = ["qwertyuiop","asdfghjkl","zxcvbnm","1234567890","azertyuiop"];
+  var LEET = { "@":"a","4":"a","0":"o","1":"l","!":"i","3":"e","$":"s","5":"s","7":"t","8":"b" };
+  var RATES = [100, 1e10, 1e12];
+
+  var pw = document.getElementById("pw");
+  var toggle = document.getElementById("toggle");
+  var timeEl = document.getElementById("time");
+  var levelEl = document.getElementById("level");
+  var meterSpans = document.querySelectorAll("#meter span");
+  var tipsEl = document.getElementById("tips");
+  var ids = ["sLen","sPool","sBits","t1","t2","t3"].reduce(function (o, k) { o[k] = document.getElementById(k); return o; }, {});
+
+  var LEVELS = [
+    { name: "Very weak", color: "var(--bad)" },
+    { name: "Weak", color: "var(--bad)" },
+    { name: "Fair", color: "var(--mid)" },
+    { name: "Strong", color: "var(--good)" },
+    { name: "Very strong", color: "var(--good)" }
+  ];
+
+  function poolSize(s) {
+    var p = 0;
+    if (/[a-z]/.test(s)) p += 26;
+    if (/[A-Z]/.test(s)) p += 26;
+    if (/[0-9]/.test(s)) p += 10;
+    if (/[ -\/:-@\[-`{-~]/.test(s)) p += 33;
+    if (/[^\x00-\x7F]/.test(s)) p += 30;
+    return p;
+  }
+
+  function sequenceChars(s) {
+    // count characters that belong to runs like abc, 321, or keyboard rows
+    var low = s.toLowerCase(), hit = new Array(low.length).fill(false), i, j;
+    for (i = 0; i < low.length - 2; i++) {
+      var d = low.charCodeAt(i + 1) - low.charCodeAt(i);
+      if ((d === 1 || d === -1) && low.charCodeAt(i + 2) - low.charCodeAt(i + 1) === d) {
+        hit[i] = hit[i + 1] = hit[i + 2] = true;
+      }
+    }
+    ROWS.forEach(function (row) {
+      var rev = row.split("").reverse().join("");
+      [row, rev].forEach(function (r) {
+        for (i = 0; i < low.length - 2; i++) {
+          if (r.indexOf(low.substr(i, 3)) !== -1) { hit[i] = hit[i + 1] = hit[i + 2] = true; }
+        }
+      });
+    });
+    return hit.filter(Boolean).length;
+  }
+
+  function analyze(s) {
+    var len = s.length, pool = poolSize(s), tips = [];
+    if (!len) return null;
+
+    var unique = new Set(s.split("")).size;
+    var repeated = len - unique;
+    var seq = sequenceChars(s);
+    var effective = len - repeated * 0.6 - seq * 0.6;
+    if (effective < 1) effective = 1;
+    var bits = effective * Math.log2(Math.max(pool, 2));
+
+    var low = s.toLowerCase();
+    var deleet = low.split("").map(function (c) { return LEET[c] || c; }).join("");
+    var commonHit = COMMON.some(function (w) { return low === w || deleet === w; });
+    var containsCommon = !commonHit && COMMON.some(function (w) {
+      return w.length >= 4 && (low.indexOf(w) !== -1 || deleet.indexOf(w) !== -1);
+    });
+    if (commonHit) bits = Math.min(bits, 12);
+    else if (containsCommon) bits = Math.max(bits - 18, 8);
+
+    if (/(19|20)\d\d/.test(s) && bits > 20) bits -= 4;
+
+    if (commonHit) tips.push("This is among the most commonly used passwords and gets found in the first guesses. Replace it completely.");
+    if (containsCommon) tips.push("It contains a familiar word. Swapping letters for symbols (a→@) barely helps.");
+    if (len < 12) tips.push("Use at least 12 characters. Length is the strongest factor.");
+    if (seq > 2) tips.push("Sequences like abc, 123 or qwerty were found. Avoid them.");
+    if (repeated > len / 3) tips.push("Many repeated characters. Varied characters raise entropy.");
+    if (!/[A-Z]/.test(s) || !/[a-z]/.test(s)) tips.push("Mix uppercase and lowercase letters.");
+    if (!/[0-9]/.test(s)) tips.push("Add some digits.");
+    if (!/[^A-Za-z0-9]/.test(s)) tips.push("Add a symbol or two (! ? # %).");
+    if (len < 16 && bits < 60) tips.push("Alternative: pick a long passphrase of 4-5 random words.");
+    if (!tips.length) tips.push("Looks good. Do not reuse this password anywhere else.");
+
+    var lvl = bits < 28 ? 0 : bits < 36 ? 1 : bits < 60 ? 2 : bits < 80 ? 3 : 4;
+    return { len: len, pool: pool, bits: bits, lvl: lvl, tips: tips };
+  }
+
+  function fmtTime(sec) {
+    if (sec < 1) return "instantly";
+    var v = sec;
+    if (v < 60) return Math.round(v) + " seconds";
+    v /= 60; if (v < 60) return Math.round(v) + " minutes";
+    v /= 60; if (v < 24) return Math.round(v) + " hours";
+    v /= 24; if (v < 365) return Math.round(v) + " days";
+    v /= 365;
+    if (v < 1000) return Math.round(v) + " years";
+    if (v < 1e6) return Math.round(v / 1000) + " thousand years";
+    if (v < 1e9) return Math.round(v / 1e6) + " million years";
+    if (v < 1e12) return Math.round(v / 1e9) + " billion years";
+    return "longer than the age of the universe";
+  }
+
+  function secondsFor(bits, rate) { return Math.pow(2, bits) / 2 / rate; }
+
+  function render() {
+    var r = analyze(pw.value);
+    var root = document.documentElement;
+    if (!r) {
+      timeEl.textContent = "—";
+      levelEl.textContent = "Start typing a password";
+      root.style.setProperty("--level", "var(--muted)");
+      meterSpans.forEach(function (m) { m.classList.remove("on"); });
+      ids.sLen.textContent = "0"; ids.sPool.textContent = "0"; ids.sBits.textContent = "0";
+      ids.t1.textContent = ids.t2.textContent = ids.t3.textContent = "—";
+      tipsEl.innerHTML = "<li>Specific tips will appear here as you type.</li>";
+      return;
+    }
+    var L = LEVELS[r.lvl];
+    root.style.setProperty("--level", L.color);
+    timeEl.textContent = fmtTime(secondsFor(r.bits, RATES[1]));
+    levelEl.textContent = L.name;
+    meterSpans.forEach(function (m, i) { m.classList.toggle("on", i <= r.lvl); });
+    ids.sLen.textContent = r.len;
+    ids.sPool.textContent = r.pool;
+    ids.sBits.textContent = Math.round(r.bits);
+    ids.t1.textContent = fmtTime(secondsFor(r.bits, RATES[0]));
+    ids.t2.textContent = fmtTime(secondsFor(r.bits, RATES[1]));
+    ids.t3.textContent = fmtTime(secondsFor(r.bits, RATES[2]));
+    tipsEl.textContent = "";
+    r.tips.forEach(function (t) {
+      var li = document.createElement("li");
+      li.textContent = t;
+      tipsEl.appendChild(li);
+    });
+  }
+
+  pw.addEventListener("input", render);
+  toggle.addEventListener("click", function () {
+    var show = pw.type === "password";
+    pw.type = show ? "text" : "password";
+    toggle.textContent = show ? "Hide" : "Show";
+    toggle.setAttribute("aria-pressed", String(show));
+  });
+})();
+</script>
+</body>
+</html>
